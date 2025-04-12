@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8" />
+	<title>SLD Extractor (Beta Version) By WAIFor</title>
+</head>
+
+<body>
+	<div class="panel">
+		<h1>SLD Extractor Beta 1.4</h1>
+		<fieldset>
+			<legend>File Selection</legend>
+			<label for="fileInput">CLICK HERE, or drag and drop files on this page<br>Supports SLD and image files</label>
+			<input id="fileInput" type="file" onchange="loadSpriteFile(this.files[0])" style="display: none" />
+			<p id="fileInfo">
+				<button onclick="testLoad()" style="float: right" title="Encode then decode, showing compressed images">Code Test</button>
+				<label>Frames: </label><em id="frameCountLabel">-</em><br/>
+				<label>Load Time: </label><em id="loadTime">-</em><br/>
+				<label>Opacity: </label><input id="opacityLabel" type="number" min="0" max="255" value="255" /><br/>
+			</p>
+		</fieldset>
+		<fieldset>
+			<legend>Output Options</legend>
+			
+			<div style="margin-bottom: 1rem">
+				<label>Output Mode:</label>
+				<button id="reloadFrameImages" type="button" style="float: right">Refresh Img</button>
+				<br/>
+				<select id="strideMode" value="0">
+					<option value="0">Normal+Shadow</option>
+					<option value="1">Normal+Shadow, Player</option>
+					<option value="2">Normal+Shadow, Smudge</option>
+					<option value="3">Normal+Shadow, Player, Smudge</option>
+					<option value="64">Normal+Shadow+Player</option>
+					<option value="66">Normal+Shadow+Player, Smudge</option>
+				</select>
+			</div>
+			
+			<div style="margin-bottom: 1rem">
+				<input id="includePlayerCheck" type="checkbox" checked />
+				<label for="includePlayerCheck">Include Player Color:</label>
+				<br/>
+				<select id="playerColor" value="blue">
+					<option value="blue" class="dark">Blue</option>
+					<option value="red">Red</option>
+					<option value="green" class="dark">Green</option>
+					<option value="yellow">Yellow</option>
+					<option value="cyan">Cyan</option>
+					<option value="purple" class="dark">Purple</option>
+					<option value="gray" class="dark">Gray</option>
+					<option value="orange">Orange</option>
+					<option value="brown" class="dark">Brown</option>
+					<option value="white">White</option>
+					<option value="black" class="dark">Black</option>
+				</select>
+			</div>
+			
+			<label>Images Per Page: </label>
+			<div>
+				<input id="outputRows" type="number" value="10" title="Rows"
+				 /><input id="outputColumns" type="number" value="10" title="Columns" />
+				<button type="button" onclick="setOutputGridSizeAutomatic()" style="float: right">Automatic</button>
+			</div>
+		</fieldset>
+		<p id="statusLabel"></p>
+		<div class="btn-download">
+			<button id="downloadBtn" type="button" onclick="downloadImages()">Down Images</button>
+			<button id="downloadBtn2" type="button" onclick="downloadSprite()">Down SLD</button>
+		</div>
+		<p>Click frames to edit their info.</p>
+		<p>Please select image files in order while importing in SMX Workshop. Use "Distinct Player Color by Alpha" mode, and have CSV checked.</p>
+	</div>
+	<ol class="result">
+	</ol>
+	<div class="toolbar" style="display: none">
+		<button type="button" id="selectAllBtn">Select/Deselect All</button>
+		<button type="button" id="toggleLayerModeBtn" title="Toggle frames to terrain/normal layer">Toggle layer</button>
+		<button type="button" id="setAnchorBtn">Set anchor</button>
+		<button type="button" id="removeBtn">Remove frames</button>
+	</div>
+	<div class="loading">Processing...</div>
+	
+<script type="text/javascript">
+	const MESSAGES = {
+		'1': 'Not a valid SLD file.',
+		'2': 'Frame count overflow.',
+		'3': 'Error: pixel size of output image cannot be larger than %d .',
+		'4': 'Type anchor locations, separated by space or comma:'
+	}
+</script>
+
+<style>
+	.panel {
+		position: fixed;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 300px;
+		zoom: 1;
+		background-color: #FAECD0;
+		padding: 8px;
+		box-sizing: border-box;
+		accent-color: brown;
+	}
+	
+	.panel h1 {
+		font-size: 1.25rem;
+		text-align: center;
+	}
+	
+	.panel button, .toolbar button {
+		background-color: brown;
+		height: 1.5rem;
+		color: #FAECD0;
+		box-sizing: border-box;
+		border-radius: 3px;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+	.panel button:disabled, .toolbar button:disabled {
+		background-color: gray;
+	}
+	
+	.panel input[type="number"], .panel input[type="text"], .panel select {
+		background-color: #654;
+		height: 1.5rem;
+		color: #FAECD0;
+		box-sizing: border-box;
+		border-radius: 3px;
+		font-size: 0.8rem;
+	}
+	
+	.panel fieldset {
+		margin-bottom: 1rem;
+		border-color: gray;
+	}
+	
+	.result {
+		position: fixed;
+		left: 300px;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: lightgray;
+		overflow: auto;
+		padding: 0;
+		margin: 0;
+		list-type: none;
+		counter-reset: frame-index;
+	}
+
+	.result > li {
+		background-color: #f0f;
+		image-rendering: pixelated;
+		margin: 1px 0 0 1px;
+		display: inline-block;
+		cursor: crosshair;
+		position: relative;
+	}
+	.result > li.overlay {
+		background-color: #F05;
+	}
+	.result > li:hover {
+		box-shadow: inset 0 0 16px 4px white;
+	}
+	.result > li.selected {
+		box-shadow: inset 0 0 16px 4px gold;
+	}
+	
+	.result > li::before {
+		counter-increment: frame-index;
+		content: counter(frame-index);
+		position: absolute;
+		margin: 2px 0 0 4px;
+		font: 12px monospace;
+		color: white;
+	}
+	
+	.btn-download {
+		width: 200px;
+		display: block;
+		margin: 12px auto;
+	}
+	.btn-download button {
+		width: 96px;
+	}
+	
+	.panel em {
+		font-style: normal;
+	}
+	
+	#outputRows, #outputColumns, #opacityLabel {
+		width: 88px;
+	}
+	
+	#playerColor {
+		width: 132px;
+		color: black;
+	}
+	#playerColor .dark {
+		color: white;
+	}
+	
+	#fileInfo label {
+		display: inline-block;
+		width: 6rem;
+	}
+	
+	.toolbar {
+		position: fixed;
+		right: 0;
+		top: 0;
+		font-size: 0;
+	}
+	
+	.loading {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, .35);
+		text-align: center;
+		font: bold 20px sans-serif;
+		line-height: 100vh;
+		display: none;
+		color: white;
+		cursor: wait;
+	}
+</style>
+
+<script type="text/javascript" src="sldedit.js"></script>
+<script type="text/javascript" src="sld.js"></script>
+<script type="text/javascript" src="jszip.min.js"></script>
+
+</body>
+
+</html>

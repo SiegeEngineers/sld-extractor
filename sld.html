@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8" />
+	<title>SLD解析器（测试版） By WAIFor</title>
+</head>
+
+<body>
+	<div class="panel">
+		<h1>SLD 解析器（测试版） 1.4</h1>
+		<fieldset>
+			<legend>SLD信息</legend>
+			<label for="fileInput">单击此处选择文件或拖动至窗口<br>支持SLD和图像文件</label>
+			<input id="fileInput" type="file" onchange="loadSpriteFile(this.files[0])" style="display: none" />
+			<p id="fileInfo">
+				<button onclick="testLoad()" style="float: right" title="将数据压缩后再载入，显示压缩后的效果">编码测试</button>
+				<label>帧数：</label><em id="frameCountLabel">-</em><br/>
+				<label>加载用时：</label><em id="loadTime">-</em>
+				<label>不透明度：</label><input id="opacityLabel" type="number" min="0" max="255" value="255" /><br/>
+			</p>
+		</fieldset>
+		<fieldset>
+			<legend>输出选项</legend>
+			
+			<div style="margin-bottom: 1rem">
+				<label>图像模式：</label>
+				<button id="reloadFrameImages" type="button" style="float: right">刷新帧</button>
+				<br/>
+				<select id="strideMode" value="0">
+					<option value="0">主体和阴影</option>
+					<option value="1">主体和阴影，玩家色</option>
+					<option value="2">主体和阴影，损伤</option>
+					<option value="3">主体和阴影，玩家色，损伤</option>
+					<option value="64">主体、阴影和玩家色</option>
+					<option value="66">主体、阴影和玩家色，损伤</option>
+				</select>
+			</div>
+			
+			<div style="margin-bottom: 1rem">
+				<input id="includePlayerCheck" type="checkbox" checked />
+				<label for="includePlayerCheck">绘制玩家色：</label>
+				<br/>
+				<select id="playerColor" value="blue">
+					<option value="blue" class="dark">蓝色</option>
+					<option value="red">红色</option>
+					<option value="green" class="dark">绿色</option>
+					<option value="yellow">黄色</option>
+					<option value="cyan">青色</option>
+					<option value="purple" class="dark">紫色</option>
+					<option value="gray" class="dark">灰色</option>
+					<option value="orange">橙色</option>
+					<option value="brown" class="dark">褐色</option>
+					<option value="white">白色</option>
+					<option value="black" class="dark">黑色</option>
+				</select>
+			</div>
+			
+			<label>每组图片行列数：</label>
+			<div>
+				<input id="outputRows" type="number" value="10" title="行"
+				 /><input id="outputColumns" type="number" value="10" title="列" />
+				<button type="button" onclick="setOutputGridSizeAutomatic()" style="float: right">自动计算</button>
+			</div>
+		</fieldset>
+		<p id="statusLabel"></p>
+		<div class="btn-download">
+			<button id="downloadBtn" type="button" onclick="downloadImages()">下载图像</button><button 
+				id="downloadBtn2" type="button" onclick="downloadSprite()">下载SLD</button>
+		</div>
+		<p>选择帧以修改其信息。</p>
+		<p>导入时，按顺序选择图片，使用“以Alpha区分玩家色、普通色和阴影”模式，并勾选使用CSV。</p>
+	</div>
+	<ol class="result">
+	</ol>
+	<div class="toolbar" style="display: none">
+		<button type="button" id="selectAllBtn">全选/全不选</button>
+		<button type="button" id="toggleLayerModeBtn" title="点击切换图层为地表/地上">改变图层</button>
+		<button type="button" id="setAnchorBtn">设置锚点</button>
+		<button type="button" id="removeBtn">删除帧</button>
+	</div>
+	<div class="loading">处理中...</div>
+	
+<script type="text/javascript">
+	const MESSAGES = {
+		'1': '这不是一个有效的SLD文件。',
+		'2': '帧数溢出。',
+		'3': '错误：导出图像边长不能大于 %d 像素。',
+		'4': '输入锚点，以空格或逗号分隔：'
+	}
+</script>
+
+<style>
+	.panel {
+		position: fixed;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 300px;
+		zoom: 1;
+		background-color: #FAECD0;
+		padding: 8px;
+		box-sizing: border-box;
+		accent-color: brown;
+	}
+	
+	.panel h1 {
+		font-size: 1.25rem;
+		text-align: center;
+	}
+	
+	.panel button, .toolbar button {
+		background-color: brown;
+		height: 1.5rem;
+		color: #FAECD0;
+		box-sizing: border-box;
+		border-radius: 3px;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+	.panel button:disabled, .toolbar button:disabled {
+		background-color: gray;
+	}
+	
+	.panel input[type="number"], .panel input[type="text"], .panel select {
+		background-color: #654;
+		height: 1.5rem;
+		color: #FAECD0;
+		box-sizing: border-box;
+		border-radius: 3px;
+		font-size: 0.8rem;
+	}
+	
+	.panel fieldset {
+		margin-bottom: 1rem;
+		border-color: gray;
+	}
+	
+	.result {
+		position: fixed;
+		left: 300px;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: lightgray;
+		overflow: auto;
+		padding: 0;
+		margin: 0;
+		list-type: none;
+		counter-reset: frame-index;
+	}
+
+	.result > li {
+		background-color: #f0f;
+		image-rendering: pixelated;
+		margin: 1px 0 0 1px;
+		display: inline-block;
+		cursor: crosshair;
+		position: relative;
+	}
+	.result > li.overlay {
+		background-color: #F05;
+	}
+	.result > li:hover {
+		box-shadow: inset 0 0 16px 4px white;
+	}
+	.result > li.selected {
+		box-shadow: inset 0 0 16px 4px gold;
+	}
+	
+	.result > li::before {
+		counter-increment: frame-index;
+		content: counter(frame-index);
+		position: absolute;
+		margin: 2px 0 0 4px;
+		font: 12px monospace;
+		color: white;
+	}
+	
+	.btn-download {
+		width: 200px;
+		display: block;
+		margin: 12px auto;
+	}
+	.btn-download button {
+		width: 96px;
+	}
+	
+	.panel em {
+		font-style: normal;
+	}
+	
+	#outputRows, #outputColumns, #opacityLabel {
+		width: 88px;
+	}
+	
+	#playerColor {
+		width: 132px;
+		color: black;
+	}
+	#playerColor .dark {
+		color: white;
+	}
+	
+	#fileInfo label {
+		display: inline-block;
+		width: 6rem;
+	}
+	
+	.toolbar {
+		position: fixed;
+		right: 0;
+		top: 0;
+		font-size: 0;
+	}
+	
+	.loading {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, .35);
+		text-align: center;
+		font: bold 20px sans-serif;
+		line-height: 100vh;
+		display: none;
+		color: white;
+		cursor: wait;
+	}
+</style>
+
+<script type="text/javascript" src="sldedit.js"></script>
+<script type="text/javascript" src="sld.js"></script>
+<script type="text/javascript" src="jszip.min.js"></script>
+
+</body>
+
+</html>
